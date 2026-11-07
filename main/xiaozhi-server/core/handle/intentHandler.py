@@ -39,13 +39,13 @@ async def handle_user_intent(conn: "ConnectionHandler", text):
         return True
 
     if conn.intent_type == "function_call":
-        action = netease_music.control_action(filtered_text)
-        if action and netease_music.enabled(conn.config):
+        music = netease_music.music_request(text)
+        if music and netease_music.enabled(conn.config):
             # Reuse the normal plugin executor/TTS path. It submits work rather
             # than waiting for MCP inside this WebSocket message handler.
             conn.sentence_id = str(uuid.uuid4().hex)
             return await process_intent_result(conn, json.dumps({'function_call': {
-                'name': 'netease_music', 'arguments': {'action': action}}}), text)
+                'name': 'netease_music', 'arguments': music}}), text)
         # 使用支持function calling的聊天方法,不再进行意图分析
         return False
     # 使用LLM进行意图分析

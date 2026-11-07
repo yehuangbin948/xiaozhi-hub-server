@@ -2,6 +2,7 @@
 import asyncio
 import json
 import os
+import re
 import secrets
 import time
 from pathlib import Path
@@ -12,6 +13,7 @@ import httpx
 SESSION = Path('data/netease-music-session.json')
 _pending = {}
 _players = {}
+COMMAND_TIMEOUT = 20
 
 class MusicError(ValueError):
     pass
@@ -27,9 +29,30 @@ def control_action(text):
         '暂停播放': 'pause', '暂停音乐': 'pause',
         '继续播放': 'resume', '继续音乐': 'resume', '恢复播放': 'resume',
         '下一首': 'next', '下一首歌': 'next', '上一首': 'previous', '上一首歌': 'previous',
+        '换一首': 'next', '换首歌': 'next', '换一首歌': 'next',
+        '播放其他的歌': 'next', '播放其他歌曲': 'next', '播放别的歌': 'next',
         'stopmusic': 'stop', 'stopplayback': 'stop', 'pausemusic': 'pause',
         'resumemusic': 'resume', 'nextsong': 'next', 'previoussong': 'previous',
     }.get(text)
+
+def music_request(text):
+    raw = str(text or '').strip().rstrip('。！？!?，,；;.')
+    compact = re.sub(r'\s+', '', raw)
+    action = control_action(compact)
+    if action: return {'action': action}
+    match = re.fullmatch(r'(?:(?:请帮我|麻烦你|帮我|给我|请)\s*)?'
+        r'(?:播放|放一首|来一首|我想听|想听|听一下|改播|换一首|换首|换成|放)\s*(.+)',raw)
+    if not match: return None
+    query = match.group(1).strip()
+    explicit_music = any(word in query for word in ('这首歌','歌曲','音乐'))
+    if not explicit_music and any(word in query for word in
+        ('新闻','天气','报告','视频','电影','电视剧','故事','播客','电台','录音','闹钟','提醒','音量','倒计时')):
+        return None
+    query = re.sub(r'^(?:一下|一首|一些)\s*','',query)
+    query = re.sub(r'的(?:歌曲|音乐|歌)(?:吧)?$','',query).strip()
+    query = query.replace(' 的 ', ' ')
+    if not query or len(query)>150: return None
+    return {'action': 'play', 'query': query}
 
 def enabled(config):
     name = (config.get('selected_module') or {}).get('Intent', 'function_call')
@@ -185,6 +208,13 @@ async def transport(conn, payload):
     return result
 
 async def perform(conn, action, query='', session_path=None):
+    try:
+        async with asyncio.timeout(COMMAND_TIMEOUT):
+            return await _perform(conn, action, query, session_path)
+    except TimeoutError:
+        raise MusicError('音乐请求超时，请稍后重试') from None
+
+async def _perform(conn, action, query='', session_path=None):
     if action not in ('search', 'play', 'pause', 'resume', 'next', 'previous', 'stop', 'status'):
         raise MusicError('不支持的音乐操作')
     if action != 'stop' and not enabled(conn.config): raise MusicError('网易云音乐插件尚未启用')
