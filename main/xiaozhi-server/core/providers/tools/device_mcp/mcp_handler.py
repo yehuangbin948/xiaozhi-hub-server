@@ -110,7 +110,8 @@ async def send_mcp_message(conn: "ConnectionHandler", payload: dict):
 
     try:
         await conn.websocket.send(message)
-        logger.bind(tag=TAG).debug(f"成功发送MCP消息: {message}")
+        if (payload.get('params') or {}).get('name') != 'self.music.transport':
+            logger.bind(tag=TAG).debug(f"成功发送MCP消息: {message}")
     except Exception as e:
         logger.bind(tag=TAG).error(f"发送MCP消息失败: {e}")
 
@@ -371,7 +372,10 @@ async def call_mcp_tool(
         "params": {"name": actual_name, "arguments": arguments},
     }
 
-    logger.bind(tag=TAG).info(f"发送客户端mcp工具调用请求: {actual_name}，参数: {args}")
+    if actual_name == 'self.music.transport':
+        logger.bind(tag=TAG).info('发送网易云音乐播放控制')
+    else:
+        logger.bind(tag=TAG).info(f"发送客户端mcp工具调用请求: {actual_name}，参数: {args}")
     await send_mcp_message(conn, payload)
 
     try:

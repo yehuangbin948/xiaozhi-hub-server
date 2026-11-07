@@ -32,6 +32,8 @@ class MCPClient:
         # If cache is not valid, regenerate the list
         result = []
         for tool_name, tool_data in self.tools.items():
+            if tool_data.get('name') == 'self.music.transport':
+                continue  # Internal transport is used only by the managed NetEase plugin.
             function_def = {
                 "name": tool_name,
                 "description": tool_data["description"],

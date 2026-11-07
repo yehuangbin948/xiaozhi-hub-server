@@ -166,6 +166,12 @@ async def _test_web_search(values: dict) -> dict:
 
 TESTS = {"web_search": _test_web_search}
 
+async def _test_netease(values):
+    from core.netease_music import Service
+    return await Service({'plugins': {'netease_music': values}}).test()
+
+TESTS['netease_music'] = _test_netease
+
 
 def _redact(message: str, values: dict, settings_id: str) -> str:
     """报错信息里不带出密钥（有的接口会把收到的 Key 原样写进错误信息）。"""

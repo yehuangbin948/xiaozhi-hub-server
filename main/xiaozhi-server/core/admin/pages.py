@@ -778,6 +778,8 @@ def save_intent_plugins(functions: list, merged: dict, path: Path = None) -> lis
     name = intent_entry_name(merged, "function_call")
     current = [str(f) for f in _entry(merged, "Intent", name).get("functions") or []]
     wanted = [p["name"] for p in catalog.PLUGINS if p["name"] in functions]
+    if 'netease_music' in wanted:
+        wanted = [name for name in wanted if name not in ('play_music', 'hass_play_music')]
     wanted += [f for f in current if f not in catalog.PLUGIN_NAMES]
     if wanted == current:
         return []

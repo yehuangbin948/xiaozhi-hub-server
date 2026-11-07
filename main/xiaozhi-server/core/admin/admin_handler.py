@@ -32,6 +32,7 @@ from core.agent.agent_session import ErrorKind
 from core.agent.grokbot_client import GrokBotError
 from core.utils.modules_initialize import initialize_modules
 from core.utils.textUtils import EMOJI_MAP
+from core import netease_music
 
 TAG = __name__
 
@@ -79,6 +80,7 @@ class AdminHandler:
         self.sessions = auth.SessionStore()
         # 后台点了更新网关、网关重启后，接着用重启前的登录（文件在 data/ 下，和配置放在一起）
         data_dir = Path(config_path).parent if config_path else updater.SERVER_DIR / "data"
+        self.netease_session = data_dir / 'netease-music-session.json'
         self.sessions_handover = data_dir / ".admin-sessions.json"
         if self.sessions.restore(self.sessions_handover):
             logger.bind(tag=TAG).info("更新网关后沿用了更新前的后台登录")
@@ -128,6 +130,9 @@ class AdminHandler:
                 web.get("/admin/api/plugin-settings/{id}", self.handle_plugin_settings),
                 web.post("/admin/api/plugin-settings/{id}", self.handle_plugin_settings_save),
                 web.post("/admin/api/plugin-settings/{id}/test", self.handle_plugin_settings_test),
+                web.get('/admin/api/netease', self.handle_netease_status),
+                web.post('/admin/api/netease/{action}', self.handle_netease_action),
+                web.post('/kiosk/music', self.handle_kiosk_music),
                 web.get("/admin/api/call-names", self.handle_call_names),
                 web.post("/admin/api/call-names", self.handle_call_names_save),
                 web.post("/admin/api/call-names/learn", self.handle_call_names_learn),
@@ -1064,7 +1069,66 @@ class AdminHandler:
             return self._error(result["note"], 400)
         if result["note"] == "已经在使用" and notes:
             result["note"] = notes[-1]
+        fresh = await self._blocking(self._merged)
+        if mode != 'function_call' or not netease_music.enabled(fresh):
+            await self._netease_stop_all()
         return self._json(result)
+
+    async def _netease_stop_all(self):
+        for conn in connections.all_connections():
+            try: await netease_music.transport(conn, {'action': 'stop'})
+            except netease_music.MusicError: pass
+
+    async def handle_netease_status(self, request):
+        self._require_login(request)
+        merged = await self._blocking(self._merged)
+        try: service = netease_music.Service(merged, self.netease_session)
+        except netease_music.MusicError:
+            return self._json({'ok': True, 'configured': False, 'logged_in': False})
+        return self._json({'ok': True, 'configured': True, 'logged_in': service.logged_in,
+                           'enabled': netease_music.enabled(merged)})
+
+    async def _netease_control(self, body, merged):
+        candidates = [c for c in connections.all_connections()
+                      if getattr(c, 'mcp_client', None) and
+                      'self.music.transport' in c.mcp_client.name_mapping.values()]
+        if body.get('device'):
+            candidates = [c for c in candidates if c.device_id == body['device']]
+        if len(candidates) != 1:
+            raise netease_music.MusicError('请唤醒一台已安装音乐组件的 ThinkSmart 后再试；多台设备时请在目标设备操作')
+        conn = candidates[0]
+        conn.config.setdefault('plugins', {})['netease_music'] = copy.deepcopy((merged.get('plugins') or {}).get('netease_music') or {})
+        conn.config['Intent'] = copy.deepcopy(merged.get('Intent') or {})
+        return await netease_music.perform(conn, body.get('action'), body.get('query', ''), self.netease_session)
+
+    async def handle_netease_action(self, request):
+        self._require_login(request)
+        body = await self._read_json(request)
+        merged = await self._blocking(self._merged)
+        try:
+            service = netease_music.Service(merged, self.netease_session)
+            action = request.match_info['action']
+            if action == 'login': result = await service.login_start()
+            elif action == 'login-check': result = await service.login_check(str(body.get('ticket', '')))
+            elif action == 'logout':
+                await self._netease_stop_all()
+                service.logout(); result = {'logged_in': False}
+            elif action == 'test': result = await service.test()
+            elif action == 'control':
+                if body.get('action') == 'search':
+                    result = {'songs': (await service.search(body.get('query')))[:5]}
+                else: result = await self._netease_control(body, merged)
+            else: return self._error('没有这个音乐操作', 404)
+            return self._json({'ok': True, **result})
+        except netease_music.MusicError as error:
+            return self._error(str(error), 400)
+
+    async def handle_kiosk_music(self, request):
+        if not self._from_this_machine(request): return self._error('只接受本机请求', 403)
+        body = await self._read_json(request)
+        merged = await self._blocking(self._merged)
+        try: return self._json(await self._netease_control(body, merged))
+        except netease_music.MusicError as error: return self._error(str(error), 400)
 
     # ---------- 插件设置 ----------
 

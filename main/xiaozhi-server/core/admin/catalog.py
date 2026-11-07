@@ -121,6 +121,8 @@ ALWAYS_ON_PLUGINS = [
     {"name": "get_lunar", "label": "查日期", "desc": "今天几号、星期几、农历和节气"},
 ]
 PLUGINS = [
+    {"name": "netease_music", "label": "网易云音乐", "desc": "在线搜歌、播放、暂停、继续和切歌；只使用网易云账号权益",
+     "config": "netease_music", "settings": "netease_music"},
     {"name": "get_weather", "label": "查天气", "desc": "实时天气和预报（使用项目共用的天气 Key，用多了可能被限制）"},
     {"name": "get_news_from_newsnow", "label": "热点新闻", "desc": "澎湃新闻、百度热搜、财联社等热榜"},
     {"name": "get_news_from_chinanews", "label": "中新网新闻", "desc": "中国新闻网的社会、国际、财经新闻"},
@@ -148,6 +150,15 @@ PLUGIN_NAMES = {p["name"] for p in PLUGINS}
 #   保存时删掉这些字段并清掉旧密钥；legacy_note 是页面上的提示。
 # 要有「测试」按钮，在 core/admin/plugin_settings.py 的 TESTS 里登记测试函数。
 PLUGIN_SETTINGS = {
+    "netease_music": {
+        "note": "仅使用网易云在线曲库。先保存接口地址，再扫码登录。启用后音乐点播统一由此插件处理；停用会停止播放。账号会话只保存在网关本机。",
+        "fields": [
+            {"key": "base_url", "label": "网易云接口地址", "type": "text", "required": True,
+             "hint": "填写已部署的网易云兼容 API 地址；服务在 Mac 上时使用 Mac 的局域网地址。"},
+            {"key": "quality", "label": "音质", "type": "text", "default": "exhigh",
+             "hint": "exhigh 为 320 kbps；standard 为标准音质。无法完整播放的歌曲会跳过，不播放试听。"},
+        ],
+    },
     "web_search": {
         "note": "需要 Anthropic 协议、支持自带搜索（web_search）的接口，比如 DeepSeek、Anthropic 官方。"
                 "聊天模型用哪家都可以，和这里无关。注意：网关装在设备上时，127.0.0.1 指设备自己。",

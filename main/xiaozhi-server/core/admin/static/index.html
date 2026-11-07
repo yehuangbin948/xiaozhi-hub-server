@@ -1280,7 +1280,7 @@ async function openPluginSettings(id, label, onSaved) {
     <div class="grid2">
       ${d.fields.map((f) => `<label class="f ${f.type === "text" ? "full" : ""}">${esc(f.label)}${f.hint ? `<span class="hint">${esc(f.hint)}</span>` : ""}${input(f)}</label>`).join("")}
     </div>
-    <p class="muted small" style="margin:8px 0 0">密钥只保存在网关的配置文件里，页面上只显示首尾 4 位。保存后马上生效，不用重启。</p>
+    <p class="muted small" style="margin:8px 0 0">${d.fields.some(f => f.type === 'secret') ? '密钥只保存在网关的配置文件里，页面上只显示首尾 4 位。' : '设置保存在网关本机。'}保存后马上生效，不用重启。</p>
     <div class="actions"><span class="result" id="ps-result"></span>
       <button class="btn" id="ps-close">收起</button>
       ${d.testable ? '<button class="btn" id="ps-test">测试</button>' : ""}
@@ -1296,7 +1296,8 @@ async function openPluginSettings(id, label, onSaved) {
     result('<span class="muted">正在真搜一次，最多等 30 秒…</span>');
     try {
       const r = await api(`plugin-settings/${encodeURIComponent(id)}/test`, values());
-      result(`<span style="color:var(--ok)">✓ 搜到 ${r.count} 条，用时 ${r.seconds} 秒。第一条：${esc(r.first)}</span>`);
+      result(id === 'netease_music' ? `<span style="color:var(--ok)">✓ 登录有效${r.member ? '，有会员标记' : ''}。</span>`
+        : `<span style="color:var(--ok)">✓ 搜到 ${r.count} 条，用时 ${r.seconds} 秒。第一条：${esc(r.first)}</span>`);
     } catch (err) { bad(err.message); }
   });
   $("ps-save").onclick = (e) => busy(e.target, async () => {
@@ -1312,6 +1313,66 @@ async function openPluginSettings(id, label, onSaved) {
       await openPluginSettings(id, label, onSaved);
     } catch (err) { bad(err.message); }
   });
+  if (id === 'netease_music') await renderNeteasePlugin(box);
+}
+
+async function renderNeteasePlugin(box) {
+  const panel = document.createElement('div');
+  panel.className = 'panel';
+  panel.innerHTML = `<div class="section-title">网易云账号与播放测试</div>
+    <p class="muted" data-ncm-status>正在读取登录状态…</p>
+    <div class="actions"><button class="btn" data-ncm-login>扫码登录</button><button class="btn" data-ncm-test>检查登录</button>
+      <button class="btn" data-ncm-logout>退出插件账号</button></div>
+    <div data-ncm-qr hidden><img alt="使用网易云音乐 App 扫码登录" width="200" height="200"><p data-ncm-qr-state></p></div>
+    <label class="f">歌名或歌手<input class="in" data-ncm-query placeholder="例如：陈奕迅 十年"></label>
+    <div class="actions"><button class="btn" data-ncm-search>搜索</button><button class="btn primary" data-ncm-play>在设备播放</button>
+      <button class="btn" data-ncm-control="previous">上一首</button><button class="btn" data-ncm-control="pause">暂停</button>
+      <button class="btn" data-ncm-control="resume">继续</button><button class="btn" data-ncm-control="next">下一首</button>
+      <button class="btn" data-ncm-control="stop">停止</button></div><p class="muted" data-ncm-result></p>`;
+  box.appendChild(panel);
+  const el = s => panel.querySelector(s);
+  const status = message => { el('[data-ncm-status]').textContent = message; };
+  const show = message => { el('[data-ncm-result]').textContent = message; };
+  const refresh = async () => {
+    const s = await api('netease');
+    status(!s.configured ? '请先保存上面的接口地址，再扫码登录。' : s.logged_in ? '插件账号已登录；可检查登录是否仍有效。' : '尚未登录，请用网易云音乐 App 扫码。');
+    el('[data-ncm-login]').disabled = !s.configured;
+  };
+  await refresh();
+  el('[data-ncm-login]').onclick = e => busy(e.target, async () => {
+    try {
+      const login = await api('netease/login', {});
+      const qr = el('[data-ncm-qr]'); qr.hidden = false; qr.querySelector('img').src = login.image;
+      el('[data-ncm-qr-state]').textContent = '请使用网易云音乐 App 扫码，并在手机上确认。';
+      const until = Date.now() + 180000;
+      while (panel.isConnected && !box.classList.contains('hidden') && Date.now() < until) {
+        await new Promise(resolve => setTimeout(resolve, 2500));
+        if (!panel.isConnected || box.classList.contains('hidden')) break;
+        const result = await api('netease/login-check', {ticket: login.ticket});
+        if (result.state === 'logged_in') { qr.hidden = true; await refresh(); show('扫码登录成功，账号会话已安全保存在网关。'); return; }
+        if (result.state === 'expired') break;
+        el('[data-ncm-qr-state]').textContent = result.state === 'confirm' ? '已扫描，请在手机上确认。' : '等待扫码…';
+      }
+      if (panel.isConnected) el('[data-ncm-qr-state]').textContent = '二维码已过期，请重新点击扫码登录。';
+    } catch (err) { show(err.message); }
+  });
+  el('[data-ncm-test]').onclick = e => busy(e.target, async () => {
+    try { const r = await api('netease/test', {}); show(r.member ? '连接正常，登录有效，有会员标记。' : '连接正常，登录有效；歌曲权限以账号权益为准。'); }
+    catch (err) { show(err.message); }
+  });
+  el('[data-ncm-logout]').onclick = e => busy(e.target, async () => {
+    try { await api('netease/logout', {}); await refresh(); show('已移除插件会话并停止播放。'); }
+    catch (err) { show(err.message); }
+  });
+  const control = async action => {
+    try {
+      const r = await api('netease/control', {action, query: el('[data-ncm-query]').value.trim()});
+      show(r.songs ? r.songs.map(s => s.artist + ' · ' + s.title).join('；') : r.track ? '已发送到设备：' + r.track.artist + ' · ' + r.track.title : '操作完成');
+    } catch (err) { show(err.message); }
+  };
+  el('[data-ncm-search]').onclick = e => busy(e.target, () => control('search'));
+  el('[data-ncm-play]').onclick = e => busy(e.target, () => control('play'));
+  panel.querySelectorAll('[data-ncm-control]').forEach(button => { button.onclick = e => busy(e.target, () => control(button.dataset.ncmControl)); });
 }
 
 // ---------- Grok Bot ----------
