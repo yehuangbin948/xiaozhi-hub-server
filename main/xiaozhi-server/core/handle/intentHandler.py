@@ -31,6 +31,10 @@ async def handle_user_intent(conn: "ConnectionHandler", text):
 
     # 检查是否有明确的退出命令
     _, filtered_text = remove_punctuation_and_length(text)
+    prefixes=(getattr(conn,'features',{}) or {}).get('wake_prefixes',[])
+    if netease_music.is_local_wake(filtered_text,prefixes):
+        await conn.websocket.send(json.dumps({'type':'wake_ready'}))
+        return True
     if await check_direct_exit(conn, filtered_text):
         return True
 
@@ -39,7 +43,7 @@ async def handle_user_intent(conn: "ConnectionHandler", text):
         return True
 
     if conn.intent_type == "function_call":
-        music = netease_music.music_request(text)
+        music = netease_music.music_request(text,prefixes)
         if music and netease_music.enabled(conn.config):
             # Reuse the normal plugin executor/TTS path. It submits work rather
             # than waiting for MCP inside this WebSocket message handler.

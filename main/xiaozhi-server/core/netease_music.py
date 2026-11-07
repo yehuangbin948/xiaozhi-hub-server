@@ -35,14 +35,34 @@ def control_action(text):
         'resumemusic': 'resume', 'nextsong': 'next', 'previoussong': 'previous',
     }.get(text)
 
-def music_request(text):
+def _wake_parts(prefixes):
+    if not isinstance(prefixes,(tuple,list)): return []
+    labels=[p.strip() for p in prefixes[:10] if isinstance(p,str) and 0<len(p)<=24]
+    return sorted({p[i:] for p in labels for i in range(len(p))},key=len,reverse=True)
+
+def is_local_wake(text,prefixes):
+    return str(text or '') in _wake_parts(prefixes)
+
+def music_request(text,wake_prefixes=()):
     raw = str(text or '').strip().rstrip('。！？!?，,；;.')
+    for prefix in _wake_parts(wake_prefixes):
+        # ASR may put spaces or commas inside a repeated wake label. Preserve
+        # the remainder as written (including spaces in English song names).
+        separator=r'[\s，,。.!！?？、]*'
+        match=re.match(separator.join(re.escape(c) for c in prefix)+separator,raw)
+        if match:
+            request=music_request(raw[match.end():])
+            if request: return request
     compact = re.sub(r'\s+', '', raw)
     action = control_action(compact)
     if action: return {'action': action}
     match = re.fullmatch(r'(?:(?:请帮我|麻烦你|帮我|给我|请)\s*)?'
         r'(?:播放|放一首|来一首|我想听|想听|听一下|改播|换一首|换首|换成|放)\s*(.+)',raw)
-    if not match: return None
+    if not match:
+        fragment=re.fullmatch(r'([\w· \-]{1,32})的(?:歌曲|音乐|歌)',raw)
+        if fragment and not any(w in raw for w in ('不','别','介绍','评价','喜欢','讨厌','知道','了解','为什么','怎么','停止','暂停')):
+            return {'action':'play','query':fragment.group(1).strip()}
+        return None
     query = match.group(1).strip()
     explicit_music = any(word in query for word in ('这首歌','歌曲','音乐'))
     if not explicit_music and any(word in query for word in
