@@ -16,6 +16,21 @@ _players = {}
 class MusicError(ValueError):
     pass
 
+def control_action(text):
+    """Only explicit transport commands; song searches and negations stay with the model."""
+    text = str(text or '').lower()
+    for prefix in ('请帮我', '麻烦你', '帮我', '请', '麻烦'):
+        if text.startswith(prefix): text = text[len(prefix):]; break
+    return {
+        '停止播放': 'stop', '停止音乐': 'stop', '停止播放音乐': 'stop',
+        '关闭音乐': 'stop', '关掉音乐': 'stop', '把音乐停了': 'stop', '别放了': 'stop',
+        '暂停播放': 'pause', '暂停音乐': 'pause',
+        '继续播放': 'resume', '继续音乐': 'resume', '恢复播放': 'resume',
+        '下一首': 'next', '下一首歌': 'next', '上一首': 'previous', '上一首歌': 'previous',
+        'stopmusic': 'stop', 'stopplayback': 'stop', 'pausemusic': 'pause',
+        'resumemusic': 'resume', 'nextsong': 'next', 'previoussong': 'previous',
+    }.get(text)
+
 def enabled(config):
     name = (config.get('selected_module') or {}).get('Intent', 'function_call')
     entry = (config.get('Intent') or {}).get(name) or {}

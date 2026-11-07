@@ -12,6 +12,7 @@ from plugins_func.register import Action, ActionResponse
 from core.handle.sendAudioHandle import send_stt_message
 from core.handle.reportHandle import enqueue_tool_report
 from core.utils.util import remove_punctuation_and_length
+from core import netease_music
 from core.providers.tts.dto.dto import TTSMessageDTO, SentenceType
 
 TAG = __name__
@@ -38,6 +39,13 @@ async def handle_user_intent(conn: "ConnectionHandler", text):
         return True
 
     if conn.intent_type == "function_call":
+        action = netease_music.control_action(filtered_text)
+        if action and netease_music.enabled(conn.config):
+            # Reuse the normal plugin executor/TTS path. It submits work rather
+            # than waiting for MCP inside this WebSocket message handler.
+            conn.sentence_id = str(uuid.uuid4().hex)
+            return await process_intent_result(conn, json.dumps({'function_call': {
+                'name': 'netease_music', 'arguments': {'action': action}}}), text)
         # 使用支持function calling的聊天方法,不再进行意图分析
         return False
     # 使用LLM进行意图分析
