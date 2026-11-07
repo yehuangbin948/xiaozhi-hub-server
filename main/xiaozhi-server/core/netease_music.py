@@ -209,9 +209,8 @@ async def transport(conn, payload):
 
 async def perform(conn, action, query='', session_path=None):
     try:
-        async with asyncio.timeout(COMMAND_TIMEOUT):
-            return await _perform(conn, action, query, session_path)
-    except TimeoutError:
+        return await asyncio.wait_for(_perform(conn, action, query, session_path),COMMAND_TIMEOUT)
+    except asyncio.TimeoutError:
         raise MusicError('音乐请求超时，请稍后重试') from None
 
 async def _perform(conn, action, query='', session_path=None):
