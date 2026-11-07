@@ -19,7 +19,7 @@ async def netease_music(conn, action, query=''):
         if action in ('search', 'status'):
             return ActionResponse(Action.REQLLM, result=json.dumps(result, ensure_ascii=False))
         track = result.get('track') or {}
-        text = ('正在播放' + track.get('artist', '') + '的《' + track.get('title', '') + '》。') if track else {
+        text = ('正在播放' + track.get('artist', '') + '的《' + track.get('title', '') + '》。') if action in ('play', 'next', 'previous') and track else {
             'pause': '音乐已暂停。', 'resume': '继续播放。', 'stop': '音乐已停止。'}.get(action, '好的。')
         return ActionResponse(Action.RESPONSE, result=text, response=text)
     except MusicError as error:
